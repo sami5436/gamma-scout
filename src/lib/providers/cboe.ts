@@ -50,7 +50,11 @@ async function fetchRaw(symbol: string): Promise<CboeResponse> {
     if (res.ok) return (await res.json()) as CboeResponse;
     lastStatus = res.status;
   }
-  if (lastStatus === 404) throw new Error(`No listed options found for "${symbol}".`);
+  // Cboe answers 403 rather than 404 for a symbol it does not publish, so both
+  // statuses mean the same thing to someone who mistyped a ticker.
+  if (lastStatus === 403 || lastStatus === 404) {
+    throw new Error(`No listed options found for "${symbol}". Check the ticker.`);
+  }
   throw new Error(`Quote provider returned HTTP ${lastStatus} for "${symbol}".`);
 }
 

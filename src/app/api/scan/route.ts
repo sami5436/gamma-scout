@@ -60,6 +60,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Scan failed.";
-    return bad(message, 502);
+    const notFound = /No listed options|no tradable contracts/i.test(message);
+    return bad(message, notFound ? 404 : 502);
   }
 }
