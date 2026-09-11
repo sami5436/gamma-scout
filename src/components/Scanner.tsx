@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GexChart } from "./GexChart";
 import { IdeaCard } from "./IdeaCard";
@@ -417,6 +418,32 @@ export function Scanner() {
           </div>
         )}
       </div>
+
+      <footer className="mt-12 border-t border-white/[0.08] pt-5">
+        <Link
+          href="/learn"
+          className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3.5 active:bg-white/[0.07]"
+        >
+          <span>
+            <span className="block text-[14px] font-medium text-zinc-200">How it works</span>
+            <span className="mt-0.5 block text-[12px] text-zinc-500">
+              Gamma, walls and spreads explained in plain English
+            </span>
+          </span>
+          <svg
+            className="h-4 w-4 shrink-0 text-zinc-600"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M8 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
+        <p className="mt-4 text-center text-[11px] text-zinc-600">
+          Research tool. Not financial advice.
+        </p>
+      </footer>
     </div>
   );
 }

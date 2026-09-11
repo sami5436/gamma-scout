@@ -6,6 +6,8 @@ the budget.
 
 Live: https://gamma-scout.vercel.app
 
+Plain English explainer: https://gamma-scout.vercel.app/learn
+
 ## What it does
 
 1. Pulls the full option chain for a ticker, including greeks and open interest.
@@ -78,6 +80,7 @@ src/lib/gamma.ts          GEX profile, walls, flip level, expected move
 src/lib/strategy.ts       candidate generation and factor scoring
 src/lib/providers/        pluggable chain sources
 src/app/api/scan/         scan endpoint
+src/app/learn/            plain English explainer page
 src/components/           mobile first interface
 ```
 
