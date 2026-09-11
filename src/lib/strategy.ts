@@ -4,6 +4,12 @@ import { bell, clamp01, ramp, weightedScore, type Factor } from "./scoring";
 import type { Chain, Contract } from "./types";
 
 export type Bias = "auto" | "bullish" | "bearish";
+/**
+ * Which structures to build. `calls` and `puts` mean a single long leg on its
+ * own, which also pins the direction, since you cannot buy a call and be
+ * positioned short.
+ */
+export type Structure = "any" | "calls" | "puts" | "spreads";
 export type TradeKind = "long_call" | "long_put" | "bull_call_spread" | "bear_put_spread";
 
 export interface Leg {
@@ -62,6 +68,7 @@ export interface ScanInput {
   minDte: number;
   maxDte: number;
   bias: Bias;
+  structure?: Structure;
   limit?: number;
 }
 
@@ -380,10 +387,29 @@ function assemble(
 
 /* -------------------------------- scan -------------------------------- */
 
-export function scan(input: ScanInput): { ideas: TradeIdea[]; bias: "bullish" | "bearish"; target: number; considered: number } {
+export interface ScanOutput {
+  ideas: TradeIdea[];
+  bias: "bullish" | "bearish";
+  /** Direction the gamma read points to on its own, ignoring any override. */
+  naturalBias: "bullish" | "bearish";
+  /** True when the requested structure or view fights the gamma read. */
+  conflict: boolean;
+  structure: Structure;
+  target: number;
+  considered: number;
+}
+
+export function scan(input: ScanInput): ScanOutput {
   const { chain, gamma: g, budget, minDte, maxDte } = input;
   const spot = chain.underlying.price;
-  const dir = resolveBias(chain, g, input.bias);
+  const structure = input.structure ?? "any";
+  const naturalBias = resolveBias(chain, g, "auto");
+
+  // Asking for calls is itself a directional statement, so it overrides the
+  // view rather than producing an empty list.
+  let dir = resolveBias(chain, g, input.bias);
+  if (structure === "calls") dir = "bullish";
+  else if (structure === "puts") dir = "bearish";
   const { target, targetSigma } = buildTarget(spot, g, dir);
   const ctx: Ctx = { spot, g, chain, budget, dir, target, targetSigma };
 
@@ -407,6 +433,9 @@ export function scan(input: ScanInput): { ideas: TradeIdea[]; bias: "bullish" | 
     byExpiry.set(c.expiry, arr);
   }
 
+  const wantSingles = structure !== "spreads";
+  const wantSpreads = structure === "any" || structure === "spreads";
+
   const ideas: TradeIdea[] = [];
   let considered = 0;
 
@@ -421,9 +450,13 @@ export function scan(input: ScanInput): { ideas: TradeIdea[]; bias: "bullish" | 
       const inBand = dir === "bullish" ? moneyness > -0.12 && moneyness < 0.15 : moneyness < 0.12 && moneyness > -0.15;
       if (!inBand) continue;
 
-      considered++;
-      const solo = assemble(dir === "bullish" ? "long_call" : "long_put", long, null, ctx);
-      if (solo) ideas.push(solo);
+      if (wantSingles) {
+        considered++;
+        const solo = assemble(dir === "bullish" ? "long_call" : "long_put", long, null, ctx);
+        if (solo) ideas.push(solo);
+      }
+
+      if (!wantSpreads) continue;
 
       // Pair with up to 6 further-out strikes for the short leg.
       const dirStep = dir === "bullish" ? 1 : -1;
@@ -462,5 +495,13 @@ export function scan(input: ScanInput): { ideas: TradeIdea[]; bias: "bullish" | 
     if (diversified.length >= (input.limit ?? 12)) break;
   }
 
-  return { ideas: diversified, bias: dir, target, considered };
+  return {
+    ideas: diversified,
+    bias: dir,
+    naturalBias,
+    conflict: dir !== naturalBias,
+    structure,
+    target,
+    considered,
+  };
 }

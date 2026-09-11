@@ -23,6 +23,9 @@ interface ScanResult {
     perStrike: StrikeGamma[];
   };
   bias: "bullish" | "bearish";
+  naturalBias: "bullish" | "bearish";
+  conflict: boolean;
+  structure: string;
   target: number;
   considered: number;
   ideas: TradeIdea[];
@@ -34,6 +37,13 @@ const DTE_OPTIONS = [
   { value: "21-45", label: "6wk" },
   { value: "45-120", label: "3mo" },
   { value: "all", label: "Any" },
+];
+
+const STRUCTURE_OPTIONS = [
+  { value: "any", label: "Any" },
+  { value: "calls", label: "Calls" },
+  { value: "puts", label: "Puts" },
+  { value: "spreads", label: "Spreads" },
 ];
 
 const BIAS_OPTIONS = [
@@ -49,20 +59,28 @@ function Segmented<T extends string>({
   value,
   onChange,
   label,
+  hint,
+  disabled,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
   label: string;
+  hint?: string;
+  disabled?: boolean;
 }) {
   return (
-    <div>
-      <span className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-500">{label}</span>
+    <div className={disabled ? "opacity-40" : undefined}>
+      <span className="mb-1.5 flex items-baseline gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+        {label}
+        {hint && <span className="normal-case tracking-normal text-zinc-600">{hint}</span>}
+      </span>
       <div className="flex gap-1 rounded-xl bg-white/[0.04] p-1">
         {options.map((o) => (
           <button
             key={o.value}
             type="button"
+            disabled={disabled}
             onClick={() => onChange(o.value)}
             className={`flex-1 whitespace-nowrap rounded-lg px-1.5 py-1.5 text-[12px] font-medium transition-colors ${
               value === o.value
@@ -103,6 +121,7 @@ export function Scanner() {
   const [budget, setBudget] = useState(600);
   const [dte, setDte] = useState("7-21");
   const [bias, setBias] = useState("auto");
+  const [structure, setStructure] = useState("any");
   const [data, setData] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -120,6 +139,7 @@ export function Scanner() {
         budget: String(budget),
         dte,
         bias,
+        structure,
       });
       lastQuery.current = qs.toString();
       try {
@@ -139,7 +159,7 @@ export function Scanner() {
         setLoading(false);
       }
     },
-    [budget, dte, bias],
+    [budget, dte, bias, structure],
   );
 
   // Re-run automatically when a filter changes, but only once a ticker is loaded.
@@ -150,7 +170,7 @@ export function Scanner() {
     const id = setTimeout(() => run(sym), 260);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budget, dte, bias]);
+  }, [budget, dte, bias, structure]);
 
   const g = data?.gamma;
   const u = data?.underlying;
@@ -240,9 +260,24 @@ export function Scanner() {
           />
         </div>
 
+        <Segmented
+          options={STRUCTURE_OPTIONS}
+          value={structure}
+          onChange={setStructure}
+          label="Structure"
+          hint={structure === "spreads" ? "two legs" : structure === "any" ? "" : "single leg"}
+        />
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Segmented options={DTE_OPTIONS} value={dte} onChange={setDte} label="Time frame" />
-          <Segmented options={BIAS_OPTIONS} value={bias} onChange={setBias} label="Your view" />
+          <Segmented
+            options={BIAS_OPTIONS}
+            value={bias}
+            onChange={setBias}
+            label="Your view"
+            hint={structure === "calls" || structure === "puts" ? "set by structure" : undefined}
+            disabled={structure === "calls" || structure === "puts"}
+          />
         </div>
       </form>
 
@@ -325,6 +360,12 @@ export function Scanner() {
                   toward <span className="tnum text-zinc-200">{usd(data.target)}</span>. Scored{" "}
                   <span className="tnum">{data.considered.toLocaleString()}</span> structures.
                 </p>
+                {data.conflict && (
+                  <p className="mt-2 border-t border-white/[0.07] pt-2 text-[12px] leading-relaxed text-amber-300/90">
+                    Heads up: the gamma read points {data.naturalBias}, so these are scored
+                    against the flow rather than with it.
+                  </p>
+                )}
               </div>
             </section>
 
@@ -344,12 +385,19 @@ export function Scanner() {
 
             <section>
               <h2 className="mb-2 px-1 text-[11px] uppercase tracking-wider text-zinc-500">
-                Trades that fit {usd0(budget)}
+                {structure === "calls"
+                  ? "Calls"
+                  : structure === "puts"
+                    ? "Puts"
+                    : structure === "spreads"
+                      ? "Spreads"
+                      : "Trades"}{" "}
+                that fit {usd0(budget)}
               </h2>
               {data.ideas.length === 0 ? (
                 <p className="rounded-2xl border border-white/10 bg-[#101219] px-4 py-6 text-center text-sm text-zinc-500">
-                  Nothing clean at this budget and time frame. Try raising the budget or
-                  widening the window.
+                  Nothing clean at this budget, structure and time frame. Try raising the
+                  budget, widening the window, or setting structure back to Any.
                 </p>
               ) : (
                 <ul className="space-y-2.5">

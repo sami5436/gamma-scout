@@ -12,7 +12,10 @@ Live: https://gamma-scout.vercel.app
 2. Builds a dealer gamma exposure profile: per strike net GEX, the call wall, the
    put wall, and the spot level where net gamma flips sign.
 3. Generates every vertical debit spread and single long option inside the budget
-   and time frame.
+   and time frame. A structure filter narrows this to calls only, puts only or
+   spreads only. Asking for calls or puts also sets the direction, since buying a
+   call is itself a directional statement, and the interface says so when that
+   choice runs against the gamma read.
 4. Scores each one on seven weighted factors and shows the reasoning per trade.
 
 ## How gamma drives the picks
@@ -64,6 +67,7 @@ npm run dev
 # check the engines against live data from the terminal
 npm run smoke -- AAPL
 npm run scan -- SPY 600
+npm run scan -- SPY 600 calls   # any | calls | puts | spreads
 ```
 
 ## Layout

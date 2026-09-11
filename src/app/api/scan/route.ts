@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildGammaProfile } from "@/lib/gamma";
 import { loadChain } from "@/lib/providers";
-import { scan, type Bias } from "@/lib/strategy";
+import { scan, type Bias, type Structure } from "@/lib/strategy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -34,10 +34,15 @@ export async function GET(req: Request) {
   const [minDte, maxDte] = DTE_BUCKETS[bucket] ?? DTE_BUCKETS["7-21"];
   const bias = (url.searchParams.get("bias") ?? "auto") as Bias;
 
+  const structureRaw = url.searchParams.get("structure") ?? "any";
+  const STRUCTURES = ["any", "calls", "puts", "spreads"];
+  if (!STRUCTURES.includes(structureRaw)) return bad(`Unknown structure "${structureRaw}".`);
+  const structure = structureRaw as Structure;
+
   try {
     const chain = await loadChain(symbol);
     const gamma = buildGammaProfile(chain, { maxDte: Math.max(maxDte, 45) });
-    const result = scan({ chain, gamma, budget, minDte, maxDte, bias });
+    const result = scan({ chain, gamma, budget, minDte, maxDte, bias, structure });
 
     return NextResponse.json({
       underlying: chain.underlying,
@@ -54,6 +59,9 @@ export async function GET(req: Request) {
         perStrike: gamma.perStrike,
       },
       bias: result.bias,
+      naturalBias: result.naturalBias,
+      conflict: result.conflict,
+      structure: result.structure,
       target: result.target,
       considered: result.considered,
       ideas: result.ideas,
