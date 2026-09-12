@@ -79,6 +79,20 @@ export function IdeaCard({ idea, rank }: { idea: TradeIdea; rank: number }) {
           </svg>
         </div>
 
+        {idea.warnings.length > 0 && (
+          <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-amber-400/[0.08] px-2.5 py-2">
+            <svg
+              className="mt-[1px] h-3.5 w-3.5 shrink-0 text-amber-300"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M10 2.5 18.5 17H1.5L10 2.5Zm0 5v4.5m0 2.2v.3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+            </svg>
+            <p className="text-[11px] leading-snug text-amber-200/90">{idea.warnings[0]}</p>
+          </div>
+        )}
+
         <div className="mt-3 grid grid-cols-3 gap-3 border-t border-white/[0.07] pt-3">
           <Stat label="Cost" value={usd0(idea.debit)} />
           <Stat
@@ -121,6 +135,44 @@ export function IdeaCard({ idea, rank }: { idea: TradeIdea; rank: number }) {
               Budget fits {idea.contracts} for {usd0(idea.totalCost)}.
             </p>
           </div>
+
+          <div>
+            <h4 className="mb-2 text-[10px] uppercase tracking-wider text-zinc-500">
+              Plan to get out
+            </h4>
+            <div className="rounded-xl bg-white/[0.04] px-3 py-2.5">
+              <div className="mb-2.5 grid grid-cols-3 gap-3 border-b border-white/[0.07] pb-2.5">
+                <Stat
+                  label="Take"
+                  value={usd0(idea.exit.takeProfitValue)}
+                  tone="text-emerald-300"
+                />
+                <Stat label="Cut" value={usd0(idea.exit.stopValue)} tone="text-rose-300" />
+                <Stat label="Out by" value={expiryLabel(idea.exit.timeExitDate)} />
+              </div>
+              <ol className="space-y-1.5">
+                {idea.exit.lines.map((l, i) => (
+                  <li key={i} className="flex gap-2 text-[11px] leading-snug text-zinc-400">
+                    <span className="tnum shrink-0 text-zinc-600">{i + 1}</span>
+                    <span>{l}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+
+          {idea.warnings.length > 1 && (
+            <div className="space-y-2">
+              {idea.warnings.slice(1).map((w) => (
+                <p
+                  key={w}
+                  className="rounded-lg bg-amber-400/[0.08] px-2.5 py-2 text-[11px] leading-snug text-amber-200/90"
+                >
+                  {w}
+                </p>
+              ))}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Stat label="Max loss" value={usd0(idea.maxLoss)} tone="text-rose-300" />

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readEvents } from "@/lib/events";
 import { buildGammaProfile } from "@/lib/gamma";
 import { loadChain } from "@/lib/providers";
 import { scan, type Bias, type Structure } from "@/lib/strategy";
@@ -42,7 +43,8 @@ export async function GET(req: Request) {
   try {
     const chain = await loadChain(symbol);
     const gamma = buildGammaProfile(chain, { maxDte: Math.max(maxDte, 45) });
-    const result = scan({ chain, gamma, budget, minDte, maxDte, bias, structure });
+    const events = readEvents(chain, gamma, Math.max(maxDte, 120));
+    const result = scan({ chain, gamma, budget, minDte, maxDte, bias, structure, events });
 
     return NextResponse.json({
       underlying: chain.underlying,
@@ -58,6 +60,7 @@ export async function GET(req: Request) {
         horizonDays: gamma.horizonDays,
         perStrike: gamma.perStrike,
       },
+      events,
       bias: result.bias,
       naturalBias: result.naturalBias,
       conflict: result.conflict,
