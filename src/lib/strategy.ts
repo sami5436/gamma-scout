@@ -1,4 +1,7 @@
 import { bsPrice, probAbove } from "./blackScholes";
+import type { EventRead } from "./events";
+import { expiryLabel } from "./format";
+import { buildExitPlan, type ExitPlan } from "./exits";
 import type { GammaProfile } from "./gamma";
 import { bell, clamp01, ramp, weightedScore, type Factor } from "./scoring";
 import type { Chain, Contract } from "./types";
@@ -59,6 +62,10 @@ export interface TradeIdea {
   tags: string[];
   /** Price level the trade is aiming at. */
   target: number;
+  /** Where to take profit, where to cut, and when to be out. */
+  exit: ExitPlan;
+  /** Dated risks the gamma read cannot see on its own. */
+  warnings: string[];
 }
 
 export interface ScanInput {
@@ -70,6 +77,8 @@ export interface ScanInput {
   bias: Bias;
   structure?: Structure;
   limit?: number;
+  /** Dated risks read out of the chain. Omit to score without an event guard. */
+  events?: EventRead;
 }
 
 const MULT = 100;
@@ -124,6 +133,7 @@ interface Ctx {
   target: number;
   /** Distance to target as a multiple of the expected move. */
   targetSigma: number;
+  events: EventRead;
 }
 
 function buildTarget(spot: number, g: GammaProfile, dir: "bullish" | "bearish"): { target: number; targetSigma: number } {
@@ -283,6 +293,59 @@ function budgetFactor(debit: number, budget: number): Factor {
   };
 }
 
+/**
+ * Dated risk the gamma read cannot see. Two things break a trade on the
+ * calendar rather than on price: an event whose implied vol deflates the
+ * moment it passes, and the expiry where the walls themselves stop existing.
+ * Returns null when neither touches the trade, so the usual seven factors keep
+ * their relative weights.
+ */
+function eventFactor(expiry: string, isSpread: boolean, ctx: Ctx): { factor: Factor; warnings: string[] } | null {
+  const { event, rolloff } = ctx.events;
+  const notes: string[] = [];
+  const warnings: string[] = [];
+  let score = 100;
+
+  // A contract expiring at or after the event window has the event's vol baked
+  // into its price. Long premium pays that and watches it drain; a spread sells
+  // part of it back, so the hit is softer.
+  if (event && expiry >= event.expiry) {
+    score = Math.min(score, isSpread ? 55 : 25);
+    const rich = `${((event.ratio - 1) * 100).toFixed(0)}% above the rest of the curve`;
+    notes.push(`event priced into the ${expiryLabel(event.expiry)} expiry at ${rich}`);
+    warnings.push(
+      isSpread
+        ? `An event is priced on or before ${expiryLabel(event.expiry)}. The short leg gives some of that vol back, so the crush hurts less than it would on a single option.`
+        : `An event is priced on or before ${expiryLabel(event.expiry)}. You are paying ${rich} for it, and that premium disappears once the date passes whether or not you were right.`,
+    );
+  }
+
+  // Walls are built from open interest. Once the expiry holding that interest
+  // is gone, so is the level the trade was aiming at.
+  if (rolloff && rolloff.share >= 0.3 && expiry > rolloff.expiry) {
+    score = Math.min(score, 45);
+    notes.push(
+      `${(rolloff.share * 100).toFixed(0)}% of the gamma expires ${expiryLabel(rolloff.expiry)}, before this trade does`,
+    );
+    warnings.push(
+      `${(rolloff.share * 100).toFixed(0)}% of the gamma behind these walls sits in the ${expiryLabel(rolloff.expiry)} expiry${rolloff.monthly ? ", a monthly opex" : ""}. After that date the walls this trade is aimed at largely stop existing.`,
+    );
+  }
+
+  if (!notes.length) return null;
+
+  return {
+    factor: {
+      key: "event",
+      label: "Event risk",
+      score,
+      weight: 1.1,
+      note: notes.join("; "),
+    },
+    warnings,
+  };
+}
+
 /* ---------------------------- construction ---------------------------- */
 
 function assemble(
@@ -339,6 +402,31 @@ function assemble(
     budgetFactor(debit, ctx.budget),
   ];
 
+  const evt = eventFactor(longC.expiry, isSpread, ctx);
+  if (evt) factors.push(evt.factor);
+  const warnings = evt?.warnings ?? [];
+
+  const exit = buildExitPlan({
+    legs: cs.map((c) => ({
+      action: (c === shortC ? "sell" : "buy") as "buy" | "sell",
+      right: c.right,
+      strike: c.strike,
+      iv: c.iv,
+    })),
+    spot: ctx.spot,
+    dte: longC.dte,
+    debit,
+    maxProfit,
+    expiry: longC.expiry,
+    dir,
+    target: ctx.target,
+    gamma: ctx.g,
+    eventExpiry:
+      ctx.events.event && longC.expiry >= ctx.events.event.expiry
+        ? ctx.events.event.expiry
+        : null,
+  });
+
   const tags: string[] = [];
   if (ctx.g.regime === "positive" && isSpread) tags.push("Sells into the pin");
   if (ctx.g.regime === "negative" && !isSpread) tags.push("Momentum regime");
@@ -346,6 +434,7 @@ function assemble(
   if (probBe >= 0.5) tags.push("Better than coinflip");
   if (rewardRisk != null && rewardRisk >= 2) tags.push(`${rewardRisk.toFixed(1)}:1`);
   if (thetaBurnPct <= 0.01) tags.push("Slow bleed");
+  if (warnings.length) tags.push("Calendar risk");
 
   const strikeLabel = isSpread
     ? `${longC.strike}/${shortC!.strike}`
@@ -382,6 +471,8 @@ function assemble(
     factors,
     tags,
     target: ctx.target,
+    exit,
+    warnings,
   };
 }
 
@@ -411,7 +502,8 @@ export function scan(input: ScanInput): ScanOutput {
   if (structure === "calls") dir = "bullish";
   else if (structure === "puts") dir = "bearish";
   const { target, targetSigma } = buildTarget(spot, g, dir);
-  const ctx: Ctx = { spot, g, chain, budget, dir, target, targetSigma };
+  const events = input.events ?? { event: null, rolloff: null };
+  const ctx: Ctx = { spot, g, chain, budget, dir, target, targetSigma, events };
 
   const right: "C" | "P" = dir === "bullish" ? "C" : "P";
   const pool = chain.contracts.filter(

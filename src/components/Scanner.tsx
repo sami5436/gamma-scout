@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GexChart } from "./GexChart";
 import { IdeaCard } from "./IdeaCard";
-import { bigUsd, signedPct, strikeLabel, usd, usd0 } from "@/lib/format";
+import { bigUsd, expiryLabel, signedPct, strikeLabel, usd, usd0 } from "@/lib/format";
+import type { EventRead } from "@/lib/events";
 import type { StrikeGamma } from "@/lib/gamma";
 import type { TradeIdea } from "@/lib/strategy";
 import type { Underlying } from "@/lib/types";
@@ -23,6 +24,7 @@ interface ScanResult {
     horizonDays: number;
     perStrike: StrikeGamma[];
   };
+  events: EventRead;
   bias: "bullish" | "bearish";
   naturalBias: "bullish" | "bearish";
   conflict: boolean;
@@ -365,6 +367,25 @@ export function Scanner() {
                   <p className="mt-2 border-t border-white/[0.07] pt-2 text-[12px] leading-relaxed text-amber-300/90">
                     Heads up: the gamma read points {data.naturalBias}, so these are scored
                     against the flow rather than with it.
+                  </p>
+                )}
+                {data.events.event && (
+                  <p className="mt-2 border-t border-white/[0.07] pt-2 text-[12px] leading-relaxed text-amber-300/90">
+                    The chain prices an event between{" "}
+                    {data.events.event.after
+                      ? expiryLabel(data.events.event.after)
+                      : "now"}{" "}
+                    and {expiryLabel(data.events.event.expiry)}, where vol runs{" "}
+                    {((data.events.event.ratio - 1) * 100).toFixed(0)}% above the rest of the
+                    curve. Anything expiring after that date is paying for it.
+                  </p>
+                )}
+                {data.events.rolloff && data.events.rolloff.share >= 0.3 && (
+                  <p className="mt-2 border-t border-white/[0.07] pt-2 text-[12px] leading-relaxed text-zinc-400">
+                    {(data.events.rolloff.share * 100).toFixed(0)}% of this gamma expires{" "}
+                    {expiryLabel(data.events.rolloff.expiry)}
+                    {data.events.rolloff.monthly ? ", a monthly opex" : ""}. The walls above are
+                    only good until then.
                   </p>
                 )}
               </div>
